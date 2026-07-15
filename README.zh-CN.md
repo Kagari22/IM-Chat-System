@@ -314,16 +314,3 @@ $env:GOCACHE="$PWD\.gocache"
 $env:GOMODCACHE="$PWD\.gomodcache"
 go test ./...
 ```
-
-## 后续可扩展方向
-
-- 群聊
-- 消息撤回
-- 已读回执
-- 文件类型校验
-- 搜索结果高亮
-- 后台管理面板
-
-## License
-
-当前仓库还没有显式的许可证文件。如果要公开分发，建议补充合适的 License。
