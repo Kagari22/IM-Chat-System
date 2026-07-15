@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IM Chat System</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #f6f8fb 0%, #edf2f7 100%);
+      color: #1f2937;
+    }
+    main {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 16px;
+    }
+    section {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+    }
+    h1, h2 { margin: 0 0 12px; }
+    h1 { font-size: 24px; grid-column: 1 / -1; }
+    h2 { font-size: 16px; }
+    input, button {
+      width: 100%;
+      height: 40px;
+      margin: 6px 0;
+      padding: 0 10px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      font-size: 14px;
+    }
+    button {
+      cursor: pointer;
+      border: 0;
+      background: #2563eb;
+      color: #fff;
+      font-weight: 700;
+    }
+    button.secondary { background: #475569; }
+    button.ghost {
+      background: #fff;
+      color: #2563eb;
+      border: 1px solid #bfdbfe;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .muted { color: #64748b; font-size: 13px; }
+    .users button {
+      text-align: left;
+      background: #f8fafc;
+      color: #111827;
+      border: 1px solid #e5e7eb;
+      font-weight: 400;
+    }
+    .chat {
+      min-height: 500px;
+      display: flex;
+      flex-direction: column;
+    }
+    .toolbar {
+      display: grid;
+      grid-template-columns: 1fr 120px 120px;
+      gap: 8px;
+      margin-bottom: 12px;
+      align-items: center;
+    }
+    .status-line {
+      min-height: 22px;
+      margin-bottom: 8px;
+      color: #475569;
+      font-size: 13px;
+    }
+    #messages {
+      flex: 1;
+      min-height: 0;
+      max-height: 58vh;
+      overflow-y: auto;
+      overflow-x: hidden;
+      border: 1px solid #e5e7eb;
+      border-radius: 10px;
+      padding: 12px;
+      background: #fafafa;
+      scroll-behavior: smooth;
+    }
+    #messages::-webkit-scrollbar {
+      width: 10px;
+    }
+    #messages::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 999px;
+      border: 2px solid #fafafa;
+    }
+    .msg {
+      margin: 8px 0;
+      padding: 8px 10px;
+      border-radius: 10px;
+      max-width: 70%;
+      background: #e5e7eb;
+      word-break: break-word;
+    }
+    .msg.mine {
+      margin-left: auto;
+      background: #dbeafe;
+    }
+    .msg small {
+      display: block;
+      color: #64748b;
+      margin-top: 4px;
+    }
+    .send {
+      display: grid;
+      grid-template-columns: 1fr 120px;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .send-extended {
+      display: grid;
+      grid-template-columns: 1fr 140px;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    @media (max-width: 760px) {
+      main { grid-template-columns: 1fr; padding: 12px; }
+      .toolbar { grid-template-columns: 1fr; }
+      #messages { max-height: 50vh; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>IM Chat System</h1>
+
+    <section>
+      <h2>账号</h2>
+      <input id="username" placeholder="用户名，例如 alice">
+      <input id="nickname" placeholder="昵称，可以为空">
+      <input id="password" type="password" placeholder="密码，至少 6 位">
+      <div class="row">
+        <button onclick="register()">注册</button>
+        <button class="secondary" onclick="login()">登录</button>
+      </div>
+      <p id="me" class="muted">未登录</p>
+      <button class="ghost" onclick="loadUsers()">刷新用户</button>
+      <div id="users" class="users"></div>
+    </section>
+
+    <section class="chat">
+      <h2 id="chatTitle">请选择聊天对象</h2>
+      <div class="toolbar">
+        <input id="searchKeyword" placeholder="搜索当前消息关键词" onkeydown="if(event.key==='Enter') searchMessages()">
+        <button class="ghost" onclick="searchMessages()">搜索</button>
+        <button class="ghost" onclick="reloadConversation()">恢复会话</button>
+      </div>
+      <div id="searchStatus" class="status-line"></div>
+      <div id="messages"></div>
+      <div class="send">
+        <input id="content" placeholder="输入消息后回车发送" onkeydown="if(event.key==='Enter') sendMessage()">
+        <button onclick="sendMessage()">发送</button>
+      </div>
+      <div class="send-extended">
+        <input id="mediaFile" type="file">
+        <button class="secondary" onclick="uploadFile()">上传文件</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let token = localStorage.getItem("token") || "";
+    let me = JSON.parse(localStorage.getItem("me") || "null");
+    let ws = null;
+    let peer = null;
+
+    updateMe();
+    if (token) {
+      connectWS();
+      loadUsers();
+    }
+
+    async function api(path, options = {}) {
+      options.headers = options.headers || {};
+      if (token) options.headers.Authorization = "Bearer " + token;
+      if (options.body && !(options.body instanceof FormData)) options.headers["Content-Type"] = "application/json";
+      const res = await fetch(path, options);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "请求失败");
+      return data;
+    }
+
+    async function register() {
+      const body = getAccountForm();
+      try {
+        await api("/api/register", { method: "POST", body: JSON.stringify(body) });
+        alert("注册成功，请登录");
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function login() {
+      const body = getAccountForm();
+      try {
+        const data = await api("/api/login", { method: "POST", body: JSON.stringify(body) });
+        token = data.token;
+        me = data.user;
+        localStorage.setItem("token", token);
+        localStorage.setItem("me", JSON.stringify(me));
+        updateMe();
+        connectWS();
+        loadUsers();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function loadUsers() {
+      if (!token) return;
+      try {
+        const data = await api("/api/users");
+        const box = document.getElementById("users");
+        box.innerHTML = "";
+        data.users.forEach(user => {
+          const btn = document.createElement("button");
+          const unread = user.unread_count ? ` (${user.unread_count})` : "";
+          btn.textContent = `#${user.id} ${user.nickname || user.username}${unread}`;
+          btn.onclick = () => selectPeer(user);
+          box.appendChild(btn);
+        });
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function selectPeer(user) {
+      peer = user;
+      document.getElementById("chatTitle").textContent = `正在和 ${user.nickname || user.username} 聊天`;
+      await reloadConversation();
+      loadUsers();
+    }
+
+    async function reloadConversation() {
+      if (!peer) {
+        setStatus("请先选择聊天对象");
+        return;
+      }
+      const data = await api(`/api/messages?peer_id=${peer.id}`);
+      renderMessageList(data.messages, true);
+      setStatus(`当前显示与 ${peer.nickname || peer.username} 的完整会话，共 ${data.messages.length} 条`);
+    }
+
+    function connectWS() {
+      if (ws) ws.close();
+      ws = new WebSocket(`ws://${location.host}/ws?token=${encodeURIComponent(token)}`);
+      ws.onmessage = event => {
+        const data = JSON.parse(event.data);
+        if (data.type === "chat" || data.type === "ack") {
+          renderMessage(data.message);
+          if (data.type === "chat" && (!peer || data.message.from_id !== peer.id)) {
+            loadUsers();
+          }
+        }
+        if (data.type === "error") {
+          alert(data.error);
+        }
+      };
+      ws.onclose = () => {
+        setTimeout(() => {
+          if (token) connectWS();
+        }, 1500);
+      };
+    }
+
+    function sendMessage() {
+      const input = document.getElementById("content");
+      const content = input.value.trim();
+      if (!peer) return alert("请先选择聊天对象");
+      if (!content) return;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return alert("WebSocket 未连接");
+
+      ws.send(JSON.stringify({ type: "chat", to: peer.id, content }));
+      input.value = "";
+      setStatus(`已发送消息到 ${peer.nickname || peer.username}`);
+    }
+
+    async function uploadFile() {
+      const fileInput = document.getElementById("mediaFile");
+      const file = fileInput.files[0];
+      if (!peer) return alert("请先选择聊天对象");
+      if (!file) return alert("请选择文件");
+
+      const form = new FormData();
+      form.append("file", file);
+      form.append("to_user_id", String(peer.id));
+
+      try {
+        await api("/api/media/upload", {
+          method: "POST",
+          body: form,
+          headers: {}
+        });
+        fileInput.value = "";
+        setStatus(`已上传文件 ${file.name}`);
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function searchMessages() {
+      const keyword = document.getElementById("searchKeyword").value.trim();
+      if (!keyword) return alert("请输入关键词");
+      const peerID = peer ? `&peer_id=${peer.id}` : "";
+      try {
+        const data = await api(`/api/search/messages?q=${encodeURIComponent(keyword)}${peerID}`);
+        renderMessageList(data.messages.slice().reverse(), true);
+        setStatus(`关键词 "${keyword}" 搜索到 ${data.messages.length} 条结果`);
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    function renderMessageList(messages, stickToBottom) {
+      const box = document.getElementById("messages");
+      box.innerHTML = "";
+      messages.forEach(message => renderMessage(message, false));
+      if (stickToBottom) {
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+
+    function renderMessage(message, autoScroll = true) {
+      if (!message || !me) return;
+      if (peer && ![message.from_id, message.to_id].includes(peer.id)) return;
+
+      const box = document.getElementById("messages");
+      const div = document.createElement("div");
+      div.className = "msg" + (message.from_id === me.id ? " mine" : "");
+      let body = "";
+      if (message.content_type === "image" && message.object_url) {
+        const imageName = message.file_name || message.content || "image";
+        body += `<div><img src="${escapeAttr(message.object_url)}" alt="${escapeAttr(imageName)}" style="max-width:220px;border-radius:8px;"></div>`;
+      } else if ((message.content_type === "file" || message.content_type === "image") && message.object_url) {
+        body += `<div>[文件] ${escapeHTML(message.file_name || message.content || "download")}</div>`;
+        body += `<div style="margin-top:8px;"><a href="${escapeAttr(message.object_url)}" target="_blank">${escapeHTML(message.file_name || "download")}</a></div>`;
+      } else {
+        body = `<div>${escapeHTML(message.content || "")}</div>`;
+      }
+      div.innerHTML = `${body}<small>#${message.id} ${new Date(message.created_at).toLocaleString()}</small>`;
+      box.appendChild(div);
+      if (autoScroll) {
+        box.scrollTop = box.scrollHeight;
+      }
+    }
+
+    function getAccountForm() {
+      return {
+        username: document.getElementById("username").value.trim(),
+        nickname: document.getElementById("nickname").value.trim(),
+        password: document.getElementById("password").value
+      };
+    }
+
+    function updateMe() {
+      document.getElementById("me").textContent = me ? `当前用户：#${me.id} ${me.nickname || me.username}` : "未登录";
+    }
+
+    function setStatus(text) {
+      document.getElementById("searchStatus").textContent = text || "";
+    }
+
+    function escapeHTML(value) {
+      return String(value).replace(/[&<>"']/g, ch => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[ch]));
+    }
+
+    function escapeAttr(value) {
+      return String(value).replace(/"/g, "&quot;");
+    }
+  </script>
+</body>
+</html>
